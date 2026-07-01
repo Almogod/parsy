@@ -1,0 +1,85 @@
+version: "3.9"
+
+services:
+  # ── API nodes (stateless — scale horizontally) ────────────────────────
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      MAX_CONCURRENT_JOBS: 8
+      FAST_WORKERS: 4
+      OCR_WORKERS: 4
+      REDIS_URL: redis://redis:6379/0
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Celery worker pool ─────────────────────────────────────────────────
+  worker:
+    build: .
+    command: celery -A tasks worker --loglevel=info --concurrency=4
+             --max-memory-per-child=512000
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MAX_CONCURRENT_JOBS: 4
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Redis (job queue + result backend) ────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Nginx reverse proxy + static frontend ─────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── Prometheus monitoring ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped

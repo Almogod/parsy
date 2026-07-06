@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 from PIL import Image
 import pytesseract
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 
 from base_parser import ParsedBlock, FastParseResult
 from base_parser import BaseParser, CorruptFileError
@@ -109,8 +109,45 @@ class VisionOCRPipeline(BaseParser):
         try:
             if ext in ("png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp"):
                 images = [Image.open(io.BytesIO(data)).convert("RGB")]
+                results = await self._ocr_pages(images)
+                for img in images:
+                    img.close()
             elif ext == "pdf":
-                images = await self._rasterize_pdf(data)
+                # Strict streaming/chunking for memory safety: read page count and batch rasterise
+                try:
+                    info = pdfinfo_from_bytes(data)
+                    page_count = info.get("Pages", 1)
+                except Exception as info_err:
+                    log.warning("Could not extract PDF page count via pdfinfo; defaulting to full rasterization",
+                                extra={"error": str(info_err)})
+                    page_count = None
+
+                if page_count and page_count > 4:
+                    log.info("Processing large PDF in page batches for memory safety",
+                             extra={"file_name": filename, "pages": page_count})
+                    results = []
+                    batch_size = 4
+                    loop = asyncio.get_running_loop()
+                    for start_page in range(1, page_count + 1, batch_size):
+                        end_page = min(start_page + batch_size - 1, page_count)
+                        batch_images = await loop.run_in_executor(
+                            None,
+                            lambda s=start_page, e=end_page: convert_from_bytes(
+                                data, dpi=self.dpi, fmt="RGB",
+                                first_page=s, last_page=e,
+                                thread_count=self.max_workers
+                            )
+                        )
+                        batch_results = await self._ocr_pages(batch_images, offset=start_page - 1)
+                        results.extend(batch_results)
+                        # Immediately release PIL image memory
+                        for img in batch_images:
+                            img.close()
+                else:
+                    images = await self._rasterize_pdf(data)
+                    results = await self._ocr_pages(images)
+                    for img in images:
+                        img.close()
             else:
                 # Unexpected — try treating as image
                 log.warning(
@@ -119,12 +156,15 @@ class VisionOCRPipeline(BaseParser):
                 )
                 try:
                     images = [Image.open(io.BytesIO(data)).convert("RGB")]
+                    results = await self._ocr_pages(images)
+                    for img in images:
+                        img.close()
                 except Exception as img_err:
                     log.error(
                         "Image decode failed for unexpected extension",
                         extra={"file_name": filename, "exc": str(img_err)},
                     )
-                    images = []
+                    results = []
         except Exception as exc:
             raise CorruptFileError(
                 f"Failed to decode/rasterize '{filename}': {exc}",
@@ -132,12 +172,11 @@ class VisionOCRPipeline(BaseParser):
                 cause=exc,
             ) from exc
 
-        if not images:
-            log.warning("No images to OCR; returning empty result",
+        if not results:
+            log.warning("No pages OCR'd; returning empty result",
                         extra={"file_name": filename})
             return FastParseResult([], 0, "", [], {})
 
-        results = await self._ocr_pages(images)
         results.sort(key=lambda r: r.page_num)
 
         all_blocks = [b for r in results for b in r.blocks]
@@ -147,7 +186,7 @@ class VisionOCRPipeline(BaseParser):
         meta = {
             "pageCount":     len(results),
             "ocrConfidence": f"{avg_conf:.1%}",
-            "pipeline":      "vision_ocr",
+            "pipeline":      "vision_ocr_streaming",
         }
         log.debug(
             "OCR complete",
@@ -168,9 +207,9 @@ class VisionOCRPipeline(BaseParser):
         )
         return images
 
-    async def _ocr_pages(self, images: list[Image.Image]) -> list[OCRPageResult]:
+    async def _ocr_pages(self, images: list[Image.Image], offset: int = 0) -> list[OCRPageResult]:
         loop = asyncio.get_running_loop()
-        payloads = [(img, i) for i, img in enumerate(images)]
+        payloads = [(img, i + offset) for i, img in enumerate(images)]
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             futures = [loop.run_in_executor(pool, _ocr_page, p) for p in payloads]
             results = await asyncio.gather(*futures, return_exceptions=True)
@@ -179,7 +218,7 @@ class VisionOCRPipeline(BaseParser):
         clean = []
         for i, r in enumerate(results):
             if isinstance(r, Exception):
-                clean.append(OCRPageResult(i, f"[OCR Error page {i}: {r}]", [], 0.0))
+                clean.append(OCRPageResult(i + offset, f"[OCR Error page {i + offset}: {r}]", [], 0.0))
             else:
                 clean.append(r)
         return clean

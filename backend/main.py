@@ -72,6 +72,23 @@ try:
 except ImportError:
     log.warning("Celery not available — async dispatch disabled")
 
+# ── Shared memory directory for zero-copy IPC task passing ────────────────
+SHARED_UPLOAD_DIR = os.getenv("SHARED_UPLOAD_DIR", "/dev/shm/parsy_uploads")
+_shared_dir_active = False
+try:
+    os.makedirs(SHARED_UPLOAD_DIR, exist_ok=True)
+    _shared_dir_active = True
+    log.info("Shared memory IPC directory active", path=SHARED_UPLOAD_DIR)
+except Exception as e:
+    SHARED_UPLOAD_DIR = os.path.join(os.getcwd(), "tmp_uploads")
+    try:
+        os.makedirs(SHARED_UPLOAD_DIR, exist_ok=True)
+        _shared_dir_active = True
+        log.info("Falling back to local temp directory for IPC", path=SHARED_UPLOAD_DIR)
+    except Exception as inner_err:
+        log.warning("Could not set up shared IPC directory; using standard serialization", error=str(inner_err))
+        _shared_dir_active = False
+
 # ── Optional ML pipeline ───────────────────────────────────────────────────
 _ml_available = os.getenv("ML_ENABLED", "true").lower() == "true"
 if _ml_available:
@@ -319,11 +336,28 @@ async def parse_async(
                     job=job_id, file=file.filename, reason=str(e), code=e.code)
         raise HTTPException(status_code=422, detail={"error": str(e), "code": e.code})
 
+    file_path = None
+    data_hex = None
+    if _shared_dir_active:
+        try:
+            temp_filename = f"{job_id}_{file.filename}"
+            file_path = os.path.join(SHARED_UPLOAD_DIR, temp_filename)
+            with open(file_path, "wb") as f:
+                f.write(data)
+        except Exception as write_err:
+            log.warning("Shared directory write failed; falling back to hex serialization",
+                        job=job_id, error=str(write_err))
+            file_path = None
+
+    if not file_path:
+        data_hex = data.hex()
+
     task = _celery_route.delay(
         filename      = file.filename,
-        data_hex      = data.hex(),
+        data_hex      = data_hex,
         output_format = format,
         options       = {"tables": tables, "meta": meta, "clean": clean},
+        file_path     = file_path,
     )
     _jobs[job_id] = {
         "status":   "queued",

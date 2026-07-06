@@ -56,23 +56,23 @@ _guard      = ResourceGuard(ResourceLimits(
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def _serialize_result(norm) -> dict:
-    """Convert NormalizedOutput to JSON-serialisable dict."""
-    return {
-        "markdown":   norm.markdown,
-        "plaintext":  norm.plaintext,
-        "json_data":  norm.json_data,
-        "csv_tables": norm.csv_tables,
-        "html":       norm.html,
-        "metrics":    norm.metrics,
-        "tableCount": len(norm.tables),
-    }
-
-
-def _run_parse(parser_fn, filename: str, data_hex: str,
-               output_format: str, options: dict) -> dict:
+    """Convert Normalizedef _run_parse(parser_fn, filename: str, data_hex: str = None,
+               output_format: str = "markdown", options: dict = None, file_path: str = None) -> dict:
     """Core parse runner used by all task variants."""
-    data = bytes.fromhex(data_hex)
-    t0   = time.perf_counter()
+    t0 = time.perf_counter()
+    data = None
+    if file_path and os.path.exists(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+        except Exception as read_err:
+            log.error(f"Failed to read file from shared path: {file_path}. Error: {read_err}")
+    
+    if data is None:
+        if data_hex:
+            data = bytes.fromhex(data_hex)
+        else:
+            raise ValueError("No data provided (both file_path and data_hex are empty/invalid)")
 
     import asyncio
     loop = asyncio.new_event_loop()
@@ -81,6 +81,13 @@ def _run_parse(parser_fn, filename: str, data_hex: str,
         result = loop.run_until_complete(parser_fn(filename, data))
     finally:
         loop.close()
+
+    # Clean up the shared file immediately to reclaim RAM disk memory
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception as del_err:
+            log.warning(f"Could not delete shared file {file_path}: {del_err}")
 
     normalized = normalize(result, output_format=output_format)
     dur = time.perf_counter() - t0
@@ -99,17 +106,20 @@ def _run_parse(parser_fn, filename: str, data_hex: str,
     time_limit=180,
     queue="fast",
 )
-def parse_fast(self, filename: str, data_hex: str,
-               output_format: str = "markdown", options: dict = None):
+def parse_fast(self, filename: str, data_hex: str = None,
+               output_format: str = "markdown", options: dict = None, file_path: str = None):
     log.info(f"[FAST] Starting: {filename}")
     self.update_state(state="STARTED", meta={"step": "fast_parse", "pct": 20})
     try:
         with _guard.guard(self.request.id or "fast"):
-            result = _run_parse(_fast.parse, filename, data_hex, output_format, options or {})
+            result = _run_parse(_fast.parse, filename, data_hex, output_format, options or {}, file_path)
         self.update_state(state="SUCCESS", meta={"pct": 100})
         return result
     except Exception as exc:
         log.error(f"[FAST] Failed: {filename} — {exc}")
+        if file_path and os.path.exists(file_path):
+            try: os.remove(file_path)
+            except Exception: pass
         raise self.retry(exc=exc, countdown=5)
 
 
@@ -122,17 +132,20 @@ def parse_fast(self, filename: str, data_hex: str,
     time_limit=300,
     queue="ocr",
 )
-def parse_ocr(self, filename: str, data_hex: str,
-              output_format: str = "markdown", options: dict = None):
+def parse_ocr(self, filename: str, data_hex: str = None,
+              output_format: str = "markdown", options: dict = None, file_path: str = None):
     log.info(f"[OCR] Starting: {filename}")
     self.update_state(state="STARTED", meta={"step": "ocr_rasterise", "pct": 15})
     try:
         with _guard.guard(self.request.id or "ocr"):
-            result = _run_parse(_ocr.parse, filename, data_hex, output_format, options or {})
+            result = _run_parse(_ocr.parse, filename, data_hex, output_format, options or {}, file_path)
         self.update_state(state="SUCCESS", meta={"pct": 100})
         return result
     except Exception as exc:
         log.error(f"[OCR] Failed: {filename} — {exc}")
+        if file_path and os.path.exists(file_path):
+            try: os.remove(file_path)
+            except Exception: pass
         raise self.retry(exc=exc, countdown=10)
 
 
@@ -145,17 +158,20 @@ def parse_ocr(self, filename: str, data_hex: str,
     time_limit=90,
     queue="structured",
 )
-def parse_structured(self, filename: str, data_hex: str,
-                     output_format: str = "markdown", options: dict = None):
+def parse_structured(self, filename: str, data_hex: str = None,
+                     output_format: str = "markdown", options: dict = None, file_path: str = None):
     log.info(f"[STRUCTURED] Starting: {filename}")
     self.update_state(state="STARTED", meta={"step": "structured_parse", "pct": 20})
     try:
         with _guard.guard(self.request.id or "struct"):
-            result = _run_parse(_structured.parse, filename, data_hex, output_format, options or {})
+            result = _run_parse(_structured.parse, filename, data_hex, output_format, options or {}, file_path)
         self.update_state(state="SUCCESS", meta={"pct": 100})
         return result
     except Exception as exc:
         log.error(f"[STRUCTURED] Failed: {filename} — {exc}")
+        if file_path and os.path.exists(file_path):
+            try: os.remove(file_path)
+            except Exception: pass
         raise self.retry(exc=exc, countdown=3)
 
 
@@ -167,13 +183,26 @@ def parse_structured(self, filename: str, data_hex: str,
     time_limit=320,
     queue="fast",
 )
-def route_and_parse(self, filename: str, data_hex: str,
-                    output_format: str = "markdown", options: dict = None):
+def route_and_parse(self, filename: str, data_hex: str = None,
+                    output_format: str = "markdown", options: dict = None, file_path: str = None):
     """
     Full orchestration: router → select queue → parse → normalize.
     Returns the routing decision alongside the result.
     """
-    data     = bytes.fromhex(data_hex)
+    data = None
+    if file_path and os.path.exists(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+        except Exception as read_err:
+            log.error(f"[ROUTER] Failed to read from shared file {file_path}: {read_err}")
+
+    if data is None:
+        if data_hex:
+            data = bytes.fromhex(data_hex)
+        else:
+            raise ValueError("No data provided (both file_path and data_hex are empty/invalid)")
+
     decision = _router.route(filename, data)
     self.update_state(state="STARTED", meta={
         "step":       "routing",
@@ -190,7 +219,7 @@ def route_and_parse(self, filename: str, data_hex: str,
     else:
         task_fn = parse_fast
 
-    result = task_fn(filename, data_hex, output_format, options or {})
+    result = task_fn(filename, data_hex, output_format, options or {}, file_path)
     result["routingDecision"] = {
         "route":      decision.route.value,
         "confidence": decision.confidence,

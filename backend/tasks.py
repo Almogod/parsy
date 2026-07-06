@@ -56,7 +56,19 @@ _guard      = ResourceGuard(ResourceLimits(
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def _serialize_result(norm) -> dict:
-    """Convert Normalizedef _run_parse(parser_fn, filename: str, data_hex: str = None,
+    """Convert NormalizedOutput to JSON-serialisable dict."""
+    return {
+        "markdown":   norm.markdown,
+        "plaintext":  norm.plaintext,
+        "json_data":  norm.json_data,
+        "csv_tables": norm.csv_tables,
+        "html":       norm.html,
+        "metrics":    norm.metrics,
+        "tableCount": len(norm.tables),
+    }
+
+
+def _run_parse(parser_fn, filename: str, data_hex: str = None,
                output_format: str = "markdown", options: dict = None, file_path: str = None) -> dict:
     """Core parse runner used by all task variants."""
     t0 = time.perf_counter()
@@ -186,7 +198,7 @@ def parse_structured(self, filename: str, data_hex: str = None,
 def route_and_parse(self, filename: str, data_hex: str = None,
                     output_format: str = "markdown", options: dict = None, file_path: str = None):
     """
-    Full orchestration: router → select queue → parse → normalize.
+    Full orchestration: router -> select queue -> parse -> normalize.
     Returns the routing decision alongside the result.
     """
     data = None

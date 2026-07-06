@@ -115,12 +115,22 @@ class VisionOCRPipeline(BaseParser):
             elif ext == "pdf":
                 # Strict streaming/chunking for memory safety: read page count and batch rasterise
                 try:
-                    info = pdfinfo_from_bytes(data)
-                    page_count = info.get("Pages", 1)
-                except Exception as info_err:
-                    log.warning("Could not extract PDF page count via pdfinfo; defaulting to full rasterization",
-                                extra={"error": str(info_err)})
-                    page_count = None
+                    import fitz
+                    # Try using fitz (PyMuPDF) first - it is pure Python/C wheel, requires no external binary (poppler)
+                    doc = fitz.open(stream=data, filetype="pdf")
+                    page_count = len(doc)
+                    use_fitz = True
+                except Exception as fitz_err:
+                    log.warning("Could not initialize fitz for PDF parsing, falling back to pdf2image/pdfinfo",
+                                extra={"error": str(fitz_err)})
+                    use_fitz = False
+                    try:
+                        info = pdfinfo_from_bytes(data)
+                        page_count = info.get("Pages", 1)
+                    except Exception as info_err:
+                        log.warning("Could not extract PDF page count via pdfinfo; defaulting to full rasterization",
+                                    extra={"error": str(info_err)})
+                        page_count = None
 
                 if page_count and page_count > 4:
                     log.info("Processing large PDF in page batches for memory safety",
@@ -130,24 +140,63 @@ class VisionOCRPipeline(BaseParser):
                     loop = asyncio.get_running_loop()
                     for start_page in range(1, page_count + 1, batch_size):
                         end_page = min(start_page + batch_size - 1, page_count)
-                        batch_images = await loop.run_in_executor(
-                            None,
-                            lambda s=start_page, e=end_page: convert_from_bytes(
-                                data, dpi=self.dpi, fmt="RGB",
-                                first_page=s, last_page=e,
-                                thread_count=self.max_workers
+                        if use_fitz:
+                            batch_images = []
+                            zoom = self.dpi / 72.0
+                            matrix = fitz.Matrix(zoom, zoom)
+                            for page_idx in range(start_page - 1, end_page):
+                                try:
+                                    page = doc.load_page(page_idx)
+                                    pix = page.get_pixmap(matrix=matrix, alpha=False)
+                                    if pix.n == 1:
+                                        img = Image.frombytes("L", [pix.width, pix.height], pix.samples).convert("RGB")
+                                    elif pix.n == 4:
+                                        img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples).convert("RGB")
+                                    else:
+                                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                                    batch_images.append(img)
+                                except Exception as page_err:
+                                    log.error(f"Failed to rasterize page {page_idx + 1} with fitz: {page_err}")
+                        else:
+                            batch_images = await loop.run_in_executor(
+                                None,
+                                lambda s=start_page, e=end_page: convert_from_bytes(
+                                    data, dpi=self.dpi, fmt="RGB",
+                                    first_page=s, last_page=e,
+                                    thread_count=self.max_workers
+                                )
                             )
-                        )
                         batch_results = await self._ocr_pages(batch_images, offset=start_page - 1)
                         results.extend(batch_results)
                         # Immediately release PIL image memory
                         for img in batch_images:
                             img.close()
                 else:
-                    images = await self._rasterize_pdf(data)
+                    if use_fitz:
+                        images = []
+                        zoom = self.dpi / 72.0
+                        matrix = fitz.Matrix(zoom, zoom)
+                        for page_idx in range(page_count or 0):
+                            try:
+                                page = doc.load_page(page_idx)
+                                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                                if pix.n == 1:
+                                    img = Image.frombytes("L", [pix.width, pix.height], pix.samples).convert("RGB")
+                                elif pix.n == 4:
+                                    img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples).convert("RGB")
+                                else:
+                                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                                images.append(img)
+                            except Exception as page_err:
+                                log.error(f"Failed to rasterize page {page_idx + 1} with fitz: {page_err}")
+                    else:
+                        images = await self._rasterize_pdf(data)
                     results = await self._ocr_pages(images)
                     for img in images:
                         img.close()
+                
+                if use_fitz:
+                    doc.close()
             else:
                 # Unexpected — try treating as image
                 log.warning(

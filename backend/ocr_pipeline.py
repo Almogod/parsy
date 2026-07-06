@@ -3,7 +3,7 @@ Parsy Backend — Level 2b: Vision + OCR Pipeline
 Handles scanned documents, image-heavy PDFs, and rotated pages.
 Uses Tesseract OCR + LayoutLM-inspired bounding-box classification.
 """
-import io, asyncio, concurrent.futures
+import io, asyncio, concurrent.futures, logging
 from dataclasses import dataclass
 from typing import AsyncGenerator
 
@@ -12,6 +12,9 @@ import pytesseract
 from pdf2image import convert_from_bytes
 
 from fast_parser import ParsedBlock, FastParseResult
+from base_parser import BaseParser, CorruptFileError
+
+log = logging.getLogger("parsy.parsers.ocr")
 
 
 # ── OCR config ─────────────────────────────────────────────────────────────
@@ -84,31 +87,54 @@ def _ocr_page(args: tuple) -> OCRPageResult:
     return OCRPageResult(page_num, full_text, blocks, avg_conf / 100)
 
 
-class VisionOCRPipeline:
+class VisionOCRPipeline(BaseParser):
     """
     Level 2b: Rasterizes each PDF page and runs parallel Tesseract OCR.
     Falls back gracefully if Tesseract is not installed.
     """
 
+    supported_extensions = frozenset({
+        "pdf", "png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp",
+    })
+
     def __init__(self, max_workers: int = 4, dpi: int = 200):
+        super().__init__()
         self.max_workers = max_workers
         self.dpi = dpi
 
-    async def parse(self, filename: str, data: bytes) -> FastParseResult:
-        ext = filename.rsplit(".", 1)[-1].lower()
+    # Called by BaseParser.parse — do NOT call directly.
+    async def _parse(self, filename: str, data: bytes) -> FastParseResult:
+        ext = self.extension_of(filename)
 
-        if ext in ("png", "jpg", "jpeg", "tiff", "bmp", "webp"):
-            images = [Image.open(io.BytesIO(data)).convert("RGB")]
-        elif ext == "pdf":
-            images = await self._rasterize_pdf(data)
-        else:
-            # Unexpected — try treating as image
-            try:
+        try:
+            if ext in ("png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp"):
                 images = [Image.open(io.BytesIO(data)).convert("RGB")]
-            except Exception:
-                images = []
+            elif ext == "pdf":
+                images = await self._rasterize_pdf(data)
+            else:
+                # Unexpected — try treating as image
+                log.warning(
+                    "Unexpected extension for OCR; attempting image decode",
+                    extra={"filename": filename, "ext": ext},
+                )
+                try:
+                    images = [Image.open(io.BytesIO(data)).convert("RGB")]
+                except Exception as img_err:
+                    log.error(
+                        "Image decode failed for unexpected extension",
+                        extra={"filename": filename, "exc": str(img_err)},
+                    )
+                    images = []
+        except Exception as exc:
+            raise CorruptFileError(
+                f"Failed to decode/rasterize '{filename}': {exc}",
+                filename=filename,
+                cause=exc,
+            ) from exc
 
         if not images:
+            log.warning("No images to OCR; returning empty result",
+                        extra={"filename": filename})
             return FastParseResult([], 0, "", [], {})
 
         results = await self._ocr_pages(images)
@@ -119,10 +145,18 @@ class VisionOCRPipeline:
         avg_conf   = sum(r.confidence for r in results) / len(results) if results else 0
 
         meta = {
-            "pageCount":    len(results),
+            "pageCount":     len(results),
             "ocrConfidence": f"{avg_conf:.1%}",
             "pipeline":      "vision_ocr",
         }
+        log.debug(
+            "OCR complete",
+            extra={
+                "filename": filename,
+                "pages": len(results),
+                "avg_confidence": f"{avg_conf:.2%}",
+            },
+        )
         return FastParseResult(all_blocks, len(results), raw_text, [], meta)
 
     async def _rasterize_pdf(self, data: bytes) -> list[Image.Image]:

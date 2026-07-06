@@ -3,7 +3,7 @@ Parsy Backend — Level 2a: Fast Structural Parser
 Handles digital PDFs, DOCX, HTML, TXT with high-throughput rule-based extraction.
 Supports parallel page chunking for large documents.
 """
-import io, re, asyncio, concurrent.futures
+import io, re, asyncio, concurrent.futures, logging
 from dataclasses import dataclass, field
 from typing import Generator
 
@@ -11,6 +11,10 @@ import fitz                    # PyMuPDF
 from docx import Document
 from bs4 import BeautifulSoup
 import chardet
+
+from base_parser import BaseParser, CorruptFileError, UnsupportedFormatError
+
+log = logging.getLogger("parsy.parsers.fast")
 
 
 @dataclass
@@ -109,23 +113,38 @@ def _extract_pdf_tables(data: bytes) -> list[list[list[str]]]:
         return []
 
 
-class FastStructuralParser:
+class FastStructuralParser(BaseParser):
     """
     Level 2a parser. Splits documents into page chunks and processes
     them in parallel using a ThreadPoolExecutor.
     """
 
+    supported_extensions = frozenset({
+        "pdf", "docx", "html", "htm", "txt", "rtf", "md",
+    })
+
     def __init__(self, max_workers: int = 4):
+        super().__init__()
         self.max_workers = max_workers
 
-    # ── Dispatcher ────────────────────────────────────────────────────
-    async def parse(self, filename: str, data: bytes) -> FastParseResult:
+    # ── Dispatcher — delegates to _parse (called by BaseParser.parse) ──
+    async def _parse(self, filename: str, data: bytes) -> FastParseResult:
         ext = filename.rsplit(".", 1)[-1].lower()
 
         if ext == "pdf":
-            return await self._parse_pdf(data)
+            try:
+                return await self._parse_pdf(data)
+            except Exception as exc:
+                raise CorruptFileError(
+                    f"PDF parse failed: {exc}", filename=filename, cause=exc
+                ) from exc
         elif ext == "docx":
-            return self._parse_docx(data)
+            try:
+                return self._parse_docx(data)
+            except Exception as exc:
+                raise CorruptFileError(
+                    f"DOCX parse failed: {exc}", filename=filename, cause=exc
+                ) from exc
         elif ext in ("html", "htm"):
             return self._parse_html(data)
         elif ext in ("txt", "rtf"):
@@ -133,6 +152,10 @@ class FastStructuralParser:
         elif ext == "md":
             return self._parse_markdown(data)
         else:
+            log.warning(
+                "Unknown extension; falling back to plain text",
+                extra={"filename": filename, "ext": ext},
+            )
             return self._parse_text(data)
 
     # ── PDF: parallel page chunking ───────────────────────────────────

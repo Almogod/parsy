@@ -2,24 +2,45 @@
 Parsy Backend — Structured Data Parser
 Handles CSV, JSON, XML, XLSX with schema detection and normalization.
 """
-import io, csv, json, re
+import io, csv, json, re, logging
 from fast_parser import ParsedBlock, FastParseResult
+from base_parser import BaseParser, CorruptFileError
 import chardet
 
+log = logging.getLogger("parsy.parsers.structured")
 
-class StructuredParser:
 
-    async def parse(self, filename: str, data: bytes) -> FastParseResult:
-        ext = filename.rsplit(".", 1)[-1].lower()
-        if ext == "csv":
-            return self._parse_csv(data)
-        elif ext == "json":
-            return self._parse_json(data)
-        elif ext in ("xml", "svg"):
-            return self._parse_xml(data)
-        elif ext in ("xlsx", "xls", "ods"):
-            return self._parse_excel(data, ext)
-        return FastParseResult([], 1, data.decode("utf-8","replace"), [], {})
+class StructuredParser(BaseParser):
+
+    supported_extensions = frozenset({
+        "csv", "json", "xml", "svg", "xlsx", "xls", "ods",
+    })
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    # Called by BaseParser.parse — do NOT call directly.
+    async def _parse(self, filename: str, data: bytes) -> FastParseResult:
+        ext = self.extension_of(filename)
+        try:
+            if ext == "csv":
+                return self._parse_csv(data)
+            elif ext == "json":
+                return self._parse_json(data)
+            elif ext in ("xml", "svg"):
+                return self._parse_xml(data)
+            elif ext in ("xlsx", "xls", "ods"):
+                return self._parse_excel(data, ext)
+            # Fallback: decode as UTF-8 text
+            log.warning(
+                "StructuredParser received unexpected extension; decoding as UTF-8",
+                extra={"filename": filename, "ext": ext},
+            )
+            return FastParseResult([], 1, data.decode("utf-8", "replace"), [], {})
+        except Exception as exc:
+            raise CorruptFileError(
+                f"Structured parse failed: {exc}", filename=filename, cause=exc
+            ) from exc
 
     def _parse_csv(self, data: bytes) -> FastParseResult:
         enc = chardet.detect(data)["encoding"] or "utf-8"

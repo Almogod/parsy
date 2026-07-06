@@ -3,7 +3,7 @@ Parsy Backend — Structured Data Parser
 Handles CSV, JSON, XML, XLSX with schema detection and normalization.
 """
 import io, csv, json, re, logging
-from fast_parser import ParsedBlock, FastParseResult
+from base_parser import ParsedBlock, FastParseResult
 from base_parser import BaseParser, CorruptFileError
 import chardet
 
@@ -34,7 +34,7 @@ class StructuredParser(BaseParser):
             # Fallback: decode as UTF-8 text
             log.warning(
                 "StructuredParser received unexpected extension; decoding as UTF-8",
-                extra={"filename": filename, "ext": ext},
+                extra={"file_name": filename, "ext": ext},
             )
             return FastParseResult([], 1, data.decode("utf-8", "replace"), [], {})
         except Exception as exc:

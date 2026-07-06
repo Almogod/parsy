@@ -11,7 +11,7 @@ from PIL import Image
 import pytesseract
 from pdf2image import convert_from_bytes
 
-from fast_parser import ParsedBlock, FastParseResult
+from base_parser import ParsedBlock, FastParseResult
 from base_parser import BaseParser, CorruptFileError
 
 log = logging.getLogger("parsy.parsers.ocr")
@@ -115,14 +115,14 @@ class VisionOCRPipeline(BaseParser):
                 # Unexpected — try treating as image
                 log.warning(
                     "Unexpected extension for OCR; attempting image decode",
-                    extra={"filename": filename, "ext": ext},
+                    extra={"file_name": filename, "ext": ext},
                 )
                 try:
                     images = [Image.open(io.BytesIO(data)).convert("RGB")]
                 except Exception as img_err:
                     log.error(
                         "Image decode failed for unexpected extension",
-                        extra={"filename": filename, "exc": str(img_err)},
+                        extra={"file_name": filename, "exc": str(img_err)},
                     )
                     images = []
         except Exception as exc:
@@ -134,7 +134,7 @@ class VisionOCRPipeline(BaseParser):
 
         if not images:
             log.warning("No images to OCR; returning empty result",
-                        extra={"filename": filename})
+                        extra={"file_name": filename})
             return FastParseResult([], 0, "", [], {})
 
         results = await self._ocr_pages(images)
@@ -152,7 +152,7 @@ class VisionOCRPipeline(BaseParser):
         log.debug(
             "OCR complete",
             extra={
-                "filename": filename,
+                "file_name": filename,
                 "pages": len(results),
                 "avg_confidence": f"{avg_conf:.2%}",
             },

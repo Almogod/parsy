@@ -346,8 +346,17 @@ class TestInputValidator:
 
     def test_all_allowed_extensions_in_set(self):
         """Every extension in ALLOWED_EXTENSIONS should pass the extension check."""
+        validator = InputValidator(max_size_bytes=5 * 1024 * 1024, strict_magic=False)
+        
+        # Build a valid empty zip payload for zip-based OOXML formats
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            pass
+        empty_zip = zip_buf.getvalue()
+
         for ext in ALLOWED_EXTENSIONS:
-            result = self.v.validate(f"test.{ext}", b"placeholder content for {ext}")
+            payload = empty_zip if ext in ("docx", "xlsx", "ods") else b"placeholder content for " + ext.encode()
+            result = validator.validate(f"test.{ext}", payload)
             assert result.extension == ext
 
     def test_zip_bomb_detection(self):

@@ -12,28 +12,15 @@ from docx import Document
 from bs4 import BeautifulSoup
 import chardet
 
-from base_parser import BaseParser, CorruptFileError, UnsupportedFormatError
+from base_parser import BaseParser, CorruptFileError, UnsupportedFormatError, ParsedBlock, FastParseResult
 
 log = logging.getLogger("parsy.parsers.fast")
 
 
-@dataclass
-class ParsedBlock:
-    block_type: str            # "heading" | "paragraph" | "table" | "list" | "code" | "hr"
-    level: int                 # heading level (1-6), 0 for non-headings
-    content: str
-    page: int
-    bbox: tuple | None = None  # (x0, y0, x1, y1)
-    table_data: list[list[str]] = field(default_factory=list)
 
 
-@dataclass
-class FastParseResult:
-    blocks: list[ParsedBlock]
-    page_count: int
-    raw_text: str
-    tables: list[list[list[str]]]
-    metadata: dict
+
+
 
 
 # ── Heading heuristics ─────────────────────────────────────────────────────
@@ -119,9 +106,7 @@ class FastStructuralParser(BaseParser):
     them in parallel using a ThreadPoolExecutor.
     """
 
-    supported_extensions = frozenset({
-        "pdf", "docx", "html", "htm", "txt", "rtf", "md",
-    })
+    supported_extensions = None
 
     def __init__(self, max_workers: int = 4):
         super().__init__()
@@ -154,7 +139,7 @@ class FastStructuralParser(BaseParser):
         else:
             log.warning(
                 "Unknown extension; falling back to plain text",
-                extra={"filename": filename, "ext": ext},
+                extra={"file_name": filename, "ext": ext},
             )
             return self._parse_text(data)
 
@@ -320,5 +305,12 @@ class FastStructuralParser(BaseParser):
                 blocks.append(ParsedBlock("list",0,t.lstrip("-* "),0))
             elif t.strip():
                 blocks.append(ParsedBlock("paragraph",0,t,0))
+
+        # Flush any remaining table at the end of the file
+        if table_buf:
+            rows = [r for r in table_buf if not all(re.match(r"^[-:]+$", c) for c in r)]
+            if rows:
+                tables.append(rows)
+                blocks.append(ParsedBlock("table", 0, "", 0, table_data=rows))
 
         return FastParseResult(blocks, 1, text, tables, {})

@@ -143,7 +143,7 @@ class InputValidator:
         log.info(
             "File validated",
             extra={
-                "filename": filename,
+                "file_name": filename,
                 "ext": ext,
                 "size_kb": f"{len(data)/1024:.1f}",
                 "detected_format": result.detected_format,
@@ -234,10 +234,10 @@ class InputValidator:
             f"Got: {data[:8].hex()!r}"
         )
         if self.strict_magic:
-            log.warning("Magic byte mismatch — rejecting file", extra={"filename": filename})
+            log.warning("Magic byte mismatch — rejecting file", extra={"file_name": filename})
             raise ValidationError(msg, code="MAGIC_BYTE_MISMATCH")
         else:
-            log.warning("Magic byte mismatch — proceeding with caution", extra={"filename": filename})
+            log.warning("Magic byte mismatch — proceeding with caution", extra={"file_name": filename})
             result.warnings.append(f"Magic byte mismatch for .{ext}")
 
     @staticmethod
@@ -280,7 +280,7 @@ class InputValidator:
             result.warnings.append("PDF appears to be password-protected; OCR may fail.")
             log.warning(
                 "Encrypted PDF detected — OCR accuracy may be degraded",
-                extra={"filename": filename},
+                extra={"file_name": filename},
             )
 
 

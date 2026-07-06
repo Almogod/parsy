@@ -6,7 +6,7 @@ Handles: date uniformity, table token standardisation, heading tree validation,
 """
 import re, datetime
 from dataclasses import dataclass, field
-from fast_parser import ParsedBlock, FastParseResult
+from base_parser import ParsedBlock, FastParseResult
 
 
 # ── Date normalizer ────────────────────────────────────────────────────────

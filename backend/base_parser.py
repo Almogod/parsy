@@ -15,7 +15,25 @@ import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from fast_parser import FastParseResult
+from dataclasses import dataclass, field
+
+@dataclass
+class ParsedBlock:
+    block_type: str            # "heading" | "paragraph" | "table" | "list" | "code" | "hr"
+    level: int                 # heading level (1-6), 0 for non-headings
+    content: str
+    page: int
+    bbox: tuple | None = None  # (x0, y0, x1, y1)
+    table_data: list[list[str]] = field(default_factory=list)
+
+
+@dataclass
+class FastParseResult:
+    blocks: list[ParsedBlock]
+    page_count: int
+    raw_text: str
+    tables: list[list[list[str]]]
+    metadata: dict
 
 # Module-level logger — each subclass will request its own child logger.
 _log = logging.getLogger("parsy.parsers")
@@ -120,12 +138,6 @@ class BaseParser(ABC):
         ParserError
             If the file exceeds :attr:`max_file_size_bytes`.
         """
-        if not data:
-            raise CorruptFileError(
-                "Received empty file payload — cannot parse.",
-                filename=filename,
-            )
-
         if self.supported_extensions is not None:
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
             if ext not in self.supported_extensions:
@@ -151,7 +163,7 @@ class BaseParser(ABC):
 
         self.log.info(
             "Parse started",
-            extra={"filename": filename, "size_bytes": len(data), "parser": parser_name},
+            extra={"file_name": filename, "size_bytes": len(data), "parser": parser_name},
         )
 
         try:
@@ -160,7 +172,7 @@ class BaseParser(ABC):
             # Already correctly typed — re-raise as-is
             self.log.error(
                 "Parse failed (ParserError)",
-                extra={"filename": filename, "parser": parser_name},
+                extra={"file_name": filename, "parser": parser_name},
                 exc_info=True,
             )
             raise
@@ -169,7 +181,7 @@ class BaseParser(ABC):
             self.log.error(
                 "Parse failed (unexpected exception)",
                 extra={
-                    "filename": filename,
+                    "file_name": filename,
                     "parser": parser_name,
                     "elapsed_s": f"{elapsed:.2f}",
                     "exc_type": type(exc).__name__,
@@ -182,7 +194,7 @@ class BaseParser(ABC):
             self.log.info(
                 "Parse complete",
                 extra={
-                    "filename": filename,
+                    "file_name": filename,
                     "parser": parser_name,
                     "elapsed_s": f"{elapsed:.2f}",
                     "pages": result.page_count,

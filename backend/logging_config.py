@@ -14,7 +14,7 @@ All modules should obtain their logger via:
     log = logging.getLogger("parsy.<module>")
 
 and pass structured context as ``extra={...}`` kwargs, e.g.:
-    log.info("Parse complete", extra={"filename": "report.pdf", "elapsed_s": "1.23"})
+    log.info("Parse complete", extra={"file_name": "report.pdf", "elapsed_s": "1.23"})
 """
 import json
 import logging

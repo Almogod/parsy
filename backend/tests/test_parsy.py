@@ -14,6 +14,7 @@ Run with:
     cd backend
     pytest tests/ -v --tb=short
 """
+from unittest.mock import MagicMock, patch
 import sys, os
 
 # Make backend modules importable regardless of where pytest is invoked from.
@@ -512,3 +513,70 @@ class TestStructuredParser:
         assert result.page_count >= 1
         combined = " ".join(b.content for b in result.blocks)
         assert "Document Intelligence" in combined or "catalog" in combined.lower()
+
+import sys
+from unittest.mock import MagicMock, patch
+
+# Ensure redis module exists so we can import and patch it even if not installed in current environment
+if "redis" not in sys.modules:
+    sys.modules["redis"] = MagicMock()
+
+class TestRedisJobStore:
+    @patch("redis.from_url")
+    def test_fallback_in_memory(self, mock_from_url):
+        # Force Redis connection to fail
+        mock_from_url.side_effect = Exception("Connection failed")
+        from job_store import RedisJobStore
+        store = RedisJobStore("redis://invalid_host_for_testing:9999/0")
+        assert store.redis is None
+        
+        # Test basic operations
+        store["job1"] = {"status": "queued", "file": "test.txt"}
+        assert "job1" in store
+        assert store["job1"]["status"] == "queued"
+        
+        # Test nested modification
+        store["job1"]["status"] = "done"
+        assert store["job1"]["status"] == "done"
+        
+        # Test items list
+        items = store.items()
+        assert len(items) == 1
+        assert items[0][0] == "job1"
+        assert items[0][1]["status"] == "done"
+
+    @patch("redis.from_url")
+    def test_redis_operations(self, mock_from_url):
+        # Mock Redis client
+        mock_redis = MagicMock()
+        mock_from_url.return_value = mock_redis
+        
+        db = {}
+        
+        def mock_get(key):
+            return db.get(key)
+            
+        def mock_setex(key, time, val):
+            db[key] = val
+            
+        def mock_exists(key):
+            return key in db
+            
+        mock_redis.get.side_effect = mock_get
+        mock_redis.setex.side_effect = mock_setex
+        mock_redis.exists.side_effect = mock_exists
+        
+        from job_store import RedisJobStore
+        store = RedisJobStore("redis://localhost:6379/0")
+        assert store.redis is mock_redis
+        
+        # Test operations write to mock Redis
+        store["job2"] = {"status": "running"}
+        assert "parsy:job:job2" in db
+        assert store["job2"]["status"] == "running"
+        
+        # Test nested updates write back to mock Redis
+        store["job2"]["status"] = "finished"
+        assert store["job2"]["status"] == "finished"
+        import json
+        assert json.loads(db["parsy:job:job2"])["status"] == "finished"

@@ -52,8 +52,9 @@ ML_ANNOTATIONS = Counter("parsy_ml_annotations_total", "ML annotations run", ["m
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_JOBS", 8))
 _semaphore: asyncio.Semaphore
 
-# ── In-memory job tracker (production: use Redis) ──────────────────────────
-_jobs: dict[str, dict] = {}
+# ── Redis/In-memory job tracker (production) ──────────────────────────────
+from job_store import RedisJobStore
+_jobs = RedisJobStore(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
 # ── Resource guard ─────────────────────────────────────────────────────────
 _guard = ResourceGuard(ResourceLimits(

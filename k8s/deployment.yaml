@@ -1,0 +1,330 @@
+---
+# ── Namespace ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: parsy
+
+---
+# ── ConfigMap ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: parsy-config
+  namespace: parsy
+data:
+  MAX_CONCURRENT_JOBS: "8"
+  FAST_WORKERS: "4"
+  OCR_WORKERS: "2"
+  MAX_MEM_MB: "1024"
+  MAX_CPU_SEC: "300"
+  MAX_FILE_MB: "200"
+  ML_ENABLED: "true"
+  MODEL_CACHE_DIR: "/app/model_cache"
+
+---
+# ── Secret (Redis URL) ────────────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: parsy-secrets
+  namespace: parsy
+type: Opaque
+stringData:
+  REDIS_URL: "redis://redis-service:6379/0"
+
+---
+# ── Redis Deployment ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: parsy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "1Gi" }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: parsy
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+---
+# ── Parsy API Deployment (stateless — HPA scales this) ────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parsy-api
+  namespace: parsy
+  labels:
+    app: parsy-api
+    version: "3.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: parsy-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # zero-downtime deploys
+  template:
+    metadata:
+      labels:
+        app: parsy-api
+    spec:
+      containers:
+        - name: parsy-api
+          image: parsy:3.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: parsy-config
+            - secretRef:
+                name: parsy-secrets
+          resources:
+            requests: { cpu: "500m",  memory: "512Mi" }
+            limits:   { cpu: "2000m", memory: "2Gi" }
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/model_cache
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-pvc
+
+---
+# ── API Service ────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: parsy-api-service
+  namespace: parsy
+spec:
+  selector:
+    app: parsy-api
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# ── HorizontalPodAutoscaler — scale API on CPU demand ─────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: parsy-api-hpa
+  namespace: parsy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: parsy-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# ── Fast Worker Deployment ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parsy-worker-fast
+  namespace: parsy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: parsy-worker-fast
+  template:
+    metadata:
+      labels:
+        app: parsy-worker-fast
+    spec:
+      containers:
+        - name: worker
+          image: parsy:3.0.0
+          command: ["celery", "-A", "tasks", "worker",
+                    "--loglevel=info", "--concurrency=4",
+                    "--queues=fast", "--max-memory-per-child=512000",
+                    "--hostname=fast@%h"]
+          envFrom:
+            - configMapRef:
+                name: parsy-config
+            - secretRef:
+                name: parsy-secrets
+          env:
+            - name: ML_ENABLED
+              value: "false"
+          resources:
+            requests: { cpu: "1000m", memory: "1Gi" }
+            limits:   { cpu: "4000m", memory: "4Gi" }
+
+---
+# ── OCR Worker Deployment ─────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parsy-worker-ocr
+  namespace: parsy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: parsy-worker-ocr
+  template:
+    metadata:
+      labels:
+        app: parsy-worker-ocr
+    spec:
+      containers:
+        - name: worker
+          image: parsy:3.0.0
+          command: ["celery", "-A", "tasks", "worker",
+                    "--loglevel=info", "--concurrency=2",
+                    "--queues=ocr", "--max-memory-per-child=1024000",
+                    "--hostname=ocr@%h"]
+          envFrom:
+            - configMapRef:
+                name: parsy-config
+            - secretRef:
+                name: parsy-secrets
+          env:
+            - name: ML_ENABLED
+              value: "false"
+          resources:
+            requests: { cpu: "2000m", memory: "2Gi" }
+            limits:   { cpu: "4000m", memory: "6Gi" }
+
+---
+# ── ML Worker Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parsy-worker-ml
+  namespace: parsy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: parsy-worker-ml
+  template:
+    metadata:
+      labels:
+        app: parsy-worker-ml
+    spec:
+      containers:
+        - name: worker
+          image: parsy:3.0.0
+          command: ["celery", "-A", "tasks", "worker",
+                    "--loglevel=info", "--concurrency=1",
+                    "--queues=ml", "--max-memory-per-child=2048000",
+                    "--hostname=ml@%h"]
+          envFrom:
+            - configMapRef:
+                name: parsy-config
+            - secretRef:
+                name: parsy-secrets
+          resources:
+            requests: { cpu: "2000m", memory: "4Gi" }
+            limits:   { cpu: "4000m", memory: "8Gi" }
+          volumeMounts:
+            - name: model-cache
+              mountPath: /app/model_cache
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-pvc
+
+---
+# ── Model cache PVC ───────────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-cache-pvc
+  namespace: parsy
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# ── Ingress ────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: parsy-ingress
+  namespace: parsy
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "310"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "310"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"      # required for SSE
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+spec:
+  rules:
+    - host: parsy.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: parsy-api-service
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: parsy-frontend-service
+                port:
+                  number: 80

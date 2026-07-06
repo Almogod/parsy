@@ -1,7 +1,8 @@
 version: "3.9"
 
 services:
-  # ── API nodes (stateless — scale horizontally) ────────────────────────
+
+  # ── API nodes (stateless — scale horizontally) ───────────────────────────
   api:
     build: .
     ports:
@@ -9,8 +10,15 @@ services:
     environment:
       MAX_CONCURRENT_JOBS: 8
       FAST_WORKERS: 4
-      OCR_WORKERS: 4
+      OCR_WORKERS: 2
+      MAX_MEM_MB: 1024
+      MAX_CPU_SEC: 300
+      MAX_FILE_MB: 200
       REDIS_URL: redis://redis:6379/0
+      ML_ENABLED: "true"
+      MODEL_CACHE_DIR: /app/model_cache
+    volumes:
+      - model_cache:/app/model_cache
     deploy:
       replicas: 2
       resources:
@@ -26,20 +34,29 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Celery worker pool ─────────────────────────────────────────────────
-  worker:
+  # ── Fast worker pool (digital PDFs, DOCX, TXT, HTML) ────────────────────
+  worker-fast:
     build: .
-    command: celery -A tasks worker --loglevel=info --concurrency=4
-             --max-memory-per-child=512000
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=4
+      --queues=fast
+      --max-memory-per-child=512000
+      --hostname=fast@%h
     environment:
       REDIS_URL: redis://redis:6379/0
-      MAX_CONCURRENT_JOBS: 4
+      ML_ENABLED: "false"
+      MAX_MEM_MB: 512
+      MAX_CPU_SEC: 120
+    volumes:
+      - model_cache:/app/model_cache
     deploy:
       replicas: 2
       resources:
@@ -50,12 +67,105 @@ services:
       - redis
     restart: unless-stopped
 
-  # ── Redis (job queue + result backend) ────────────────────────────────
+  # ── OCR worker pool (scanned PDFs, image-heavy) ──────────────────────────
+  worker-ocr:
+    build: .
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=2
+      --queues=ocr
+      --max-memory-per-child=1024000
+      --hostname=ocr@%h
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ML_ENABLED: "false"
+      MAX_MEM_MB: 1024
+      MAX_CPU_SEC: 240
+      OCR_WORKERS: 2
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 6G
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── ML inference worker (LayoutLM, MiniLM, TATR) ─────────────────────────
+  worker-ml:
+    build: .
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=1
+      --queues=ml
+      --max-memory-per-child=2048000
+      --hostname=ml@%h
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ML_ENABLED: "true"
+      MODEL_CACHE_DIR: /app/model_cache
+      MAX_MEM_MB: 2048
+      MAX_CPU_SEC: 180
+    volumes:
+      - model_cache:/app/model_cache
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Structured data worker (CSV, JSON, XML, XLSX) ───────────────────────
+  worker-structured:
+    build: .
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=6
+      --queues=structured
+      --max-memory-per-child=256000
+      --hostname=struct@%h
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ML_ENABLED: "false"
+      MAX_MEM_MB: 256
+      MAX_CPU_SEC: 60
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Celery Flower (worker monitoring UI) ─────────────────────────────────
+  flower:
+    build: .
+    command: celery -A tasks flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Redis (job queue + result backend) ───────────────────────────────────
   redis:
     image: redis:7-alpine
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -63,23 +173,44 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # ── Nginx reverse proxy + static frontend ─────────────────────────────
+  # ── Nginx reverse proxy + static frontend ────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     ports:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./frontend:/usr/share/nginx/html:ro
+      - ./:/usr/share/nginx/html:ro
     depends_on:
       - api
     restart: unless-stopped
 
-  # ── Prometheus monitoring ──────────────────────────────────────────────
+  # ── Prometheus monitoring ─────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     restart: unless-stopped
+
+  # ── Grafana dashboards ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: parsy_admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  model_cache:
+  prometheus_data:
+  grafana_data:

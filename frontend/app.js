@@ -350,25 +350,32 @@
 
   function renderResult(idx) {
     const r = results[idx]; if (!r) return;
-    currentOutput = r.output || '';
-    applyOutputMode();
-    const m = r.meta || {};
-    resultStats.innerHTML = [
-      m.wordCount   && `<span class="stat-pill"><b>${(+m.wordCount).toLocaleString()}</b> words</span>`,
-      m.pageCount   && `<span class="stat-pill"><b>${m.pageCount}</b> pages</span>`,
-      m.tableCount  && `<span class="stat-pill"><b>${m.tableCount}</b> tables</span>`,
-      m.language    && `<span class="stat-pill"><b>${m.language}</b></span>`,
-      m.readingTime && `<span class="stat-pill"><b>${m.readingTime}</b> read</span>`,
-      m.pipeline    && `<span class="stat-pill route-pill">${m.pipeline}</span>`,
-    ].filter(Boolean).join('');
+    const container = $('outputPane');
+    container.classList.add('switching');
 
-    if (Object.keys(m).length) {
-      metaPane.innerHTML = `<div class="meta-title">Metadata</div>` +
-        Object.entries(m).map(([k,v]) =>
-          `<div class="meta-row"><span class="meta-key">${k}</span><span class="meta-val">${v}</span></div>`
-        ).join('');
-      metaPane.style.display = '';
-    } else metaPane.style.display = 'none';
+    setTimeout(() => {
+      currentOutput = r.output || '';
+      applyOutputMode();
+      const m = r.meta || {};
+      resultStats.innerHTML = [
+        m.wordCount   && `<span class="stat-pill"><b>${(+m.wordCount).toLocaleString()}</b> words</span>`,
+        m.pageCount   && `<span class="stat-pill"><b>${m.pageCount}</b> pages</span>`,
+        m.tableCount  && `<span class="stat-pill"><b>${m.tableCount}</b> tables</span>`,
+        m.language    && `<span class="stat-pill"><b>${m.language}</b></span>`,
+        m.readingTime && `<span class="stat-pill"><b>${m.readingTime}</b> read</span>`,
+        m.pipeline    && `<span class="stat-pill route-pill">${m.pipeline}</span>`,
+      ].filter(Boolean).join('');
+
+      if (Object.keys(m).length) {
+        metaPane.innerHTML = `<div class="meta-title">Metadata</div>` +
+          Object.entries(m).map(([k,v]) =>
+            `<div class="meta-row"><span class="meta-key">${k}</span><span class="meta-val">${v}</span></div>`
+          ).join('');
+        metaPane.style.display = '';
+      } else metaPane.style.display = 'none';
+
+      container.classList.remove('switching');
+    }, 80);
   }
 
   function applyOutputMode() {
@@ -522,7 +529,7 @@
   // ── Scroll header ─────────────────────────────────────────────────────────
   window.addEventListener('scroll', () => {
     const h = $('header');
-    if (h) h.style.borderBottomColor = window.scrollY > 40 ? 'var(--border2)' : 'var(--border)';
+    if (h) h.style.borderBottomColor = window.scrollY > 40 ? 'var(--border-active)' : 'var(--border)';
   });
 
   // ── Init history ──────────────────────────────────────────────────────────

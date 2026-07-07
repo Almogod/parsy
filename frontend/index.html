@@ -9,16 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="style-v3.css" />
 </head>
 <body>
-  <!-- Background -->
+  <!-- Background subtle glow -->
   <div class="bg-mesh"></div>
-  <div class="bg-orbs">
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
-    <div class="orb orb-3"></div>
-  </div>
 
   <!-- Header -->
   <header class="header" id="header">
@@ -57,7 +51,7 @@
       </div>
       <h1 class="hero-title">
         Parse Any Document<br/>
-        <span class="gradient-text">With Surgical Precision</span>
+        <span>With Surgical Precision</span>
       </h1>
       <p class="hero-subtitle">
         Parsy goes beyond simple text extraction. It understands structure, preserves tables, extracts metadata, detects language, and delivers pixel-perfect markdown — all in your browser with zero data leaving your machine.
@@ -69,12 +63,13 @@
         </a>
         <a href="#features" class="btn-outline">See Capabilities</a>
       </div>
-      <div class="hero-stats">
-        <div class="stat"><span class="stat-num">12+</span><span class="stat-label">File Formats</span></div>
-        <div class="stat-divider"></div>
-        <div class="stat"><span class="stat-num">100%</span><span class="stat-label">Private & Local</span></div>
-        <div class="stat-divider"></div>
-        <div class="stat"><span class="stat-num">5</span><span class="stat-label">Output Formats</span></div>
+      
+      <!-- System Specs Board (Replaces Hero Metrics Template) -->
+      <div class="system-specs">
+        <div class="spec-row"><span class="spec-label">ENGINE_VERSION</span><span class="spec-val">v3.4.1-local</span></div>
+        <div class="spec-row"><span class="spec-label">WORKER_POOL</span><span class="spec-val">Multiprocess / WebWorker</span></div>
+        <div class="spec-row"><span class="spec-label">SANDBOX_ISOLATION</span><span class="spec-val">Active (Localhost)</span></div>
+        <div class="spec-row"><span class="spec-label">TELEMETRY</span><span class="spec-val">0.0% (Opt-out default)</span></div>
       </div>
     </div>
     <div class="hero-visual">
@@ -92,122 +87,146 @@
     </div>
   </section>
 
-  <!-- Features -->
+  <!-- Features (Capabilities) -->
   <section class="features-section" id="features">
     <div class="section-header">
-      <div class="section-tag">Capabilities</div>
-      <h2 class="section-title">Everything LlamaParse does,<br/><span class="gradient-text">done better</span></h2>
+      <span class="section-tag">// 01 / core_capabilities</span>
+      <h2 class="section-title">Everything LlamaParse does,<br/><span>done better</span></h2>
     </div>
-    <div class="features-grid">
-      <div class="feature-card feature-large">
-        <div class="feature-icon" style="--c:#6366f1">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    
+    <!-- Asymmetrical Split Layout (Replaces Identical Card Grid) -->
+    <div class="features-split">
+      <div class="features-deck">
+        <div class="feature-deck-item">
+          <div class="feature-deck-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </div>
+          <div class="feature-deck-content">
+            <h3>Native Layout Reconstruction</h3>
+            <p>Faithfully recreates multi-column layouts, nested sections, headers and footers. Reading order is intelligently inferred even in complex documents.</p>
+          </div>
         </div>
-        <h3>Native Layout Reconstruction</h3>
-        <p>Faithfully recreates multi-column layouts, nested sections, headers and footers — not just raw text dumps. Reading order is intelligently inferred even in complex documents.</p>
-        <div class="feature-badge">Core Engine</div>
+        <div class="feature-deck-item">
+          <div class="feature-deck-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+          </div>
+          <div class="feature-deck-content">
+            <h3>Perfect Table Ingestion</h3>
+            <p>Merges cells, detects headers, handles rowspan/colspan, and outputs clean Markdown tables, JSON arrays, or CSV files.</p>
+          </div>
+        </div>
+        <div class="feature-deck-item">
+          <div class="feature-deck-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <div class="feature-deck-content">
+            <h3>5 Configurable Formats</h3>
+            <p>Export directly to Markdown, Plain Text, JSON, HTML, and CSV. Each format is strictly schema-validated for LLM downstream applications.</p>
+          </div>
+        </div>
+        <div class="feature-deck-item">
+          <div class="feature-deck-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="feature-deck-content">
+            <h3>100% Private Processing</h3>
+            <p>All processing is client-side or worker isolated. No files are uploaded to third-party endpoints. Zero risk of data exfiltration.</p>
+          </div>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon" style="--c:#8b5cf6">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+      
+      <!-- Interactive Structure Preview Widget -->
+      <div class="structure-widget">
+        <div class="widget-header">
+          <span>document_restruct_preview.cpp</span>
+          <span style="color:var(--success)">● idle</span>
         </div>
-        <h3>Perfect Table Extraction</h3>
-        <p>Merges cells, detects headers, handles rowspan/colspan — output as Markdown tables, JSON arrays, or CSV.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon" style="--c:#06b6d4">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <div class="widget-pane">
+          <div class="widget-col">
+            <div class="widget-col-title">Input Wireframe (PDF)</div>
+            <div class="pdf-mock">
+              <div class="mock-block mock-h1"></div>
+              <div class="mock-block mock-p"></div>
+              <div class="mock-block mock-p2"></div>
+              <div class="mock-table">
+                <div class="mock-tr"><div class="mock-td"></div><div class="mock-td"></div><div class="mock-td"></div></div>
+                <div class="mock-tr"><div class="mock-td"></div><div class="mock-td"></div><div class="mock-td"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="widget-col">
+            <div class="widget-col-title">Output Structure (MD)</div>
+            <div class="md-mock">
+              <div><span class="md-mock-h"># Q4 Executive Summary</span></div>
+              <div style="margin-top: 6px;">Revenue grew by 24% YoY.</div>
+              <div style="margin-top: 10px;"><span class="md-mock-h">## Performance Table</span></div>
+              <div class="md-mock-t" style="margin-top: 4px;">| Q3 | Q4 | Change |</div>
+              <div class="md-mock-t">|---|---|---|</div>
+              <div class="md-mock-t">| 114M | 142M | +24% |</div>
+            </div>
+          </div>
         </div>
-        <h3>Deep Metadata Extraction</h3>
-        <p>Author, creation date, page count, fonts used, language detection, word count, reading time — all surfaced automatically.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon" style="--c:#10b981">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        </div>
-        <h3>5 Output Formats</h3>
-        <p>Markdown, Plain Text, JSON, HTML, and CSV — each optimized for its intended downstream use case.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon" style="--c:#f59e0b">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <h3>100% Private Processing</h3>
-        <p>All parsing happens in your browser. No API keys, no uploads, no data ever leaves your machine.</p>
-      </div>
-      <div class="feature-card feature-large">
-        <div class="feature-icon" style="--c:#ec4899">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </div>
-        <h3>Hierarchical Structure Detection</h3>
-        <p>Detects H1–H6 heading levels, numbered lists, bullet hierarchies, definition lists, and blockquotes — preserving full semantic document structure in Markdown output for perfect LLM ingestion.</p>
-        <div class="feature-badge">AI-Ready</div>
       </div>
     </div>
   </section>
 
-  <!-- Formats -->
+  <!-- Formats (Specification Matrix) -->
   <section class="formats-section" id="formats">
     <div class="section-header">
-      <div class="section-tag">Supported Formats</div>
-      <h2 class="section-title">Parse <span class="gradient-text">anything</span></h2>
+      <span class="section-tag">// 02 / specs_matrix</span>
+      <h2 class="section-title">Parse <span>anything</span></h2>
     </div>
-    <div class="formats-grid">
-      <div class="format-card" data-ext="PDF">
-        <div class="format-icon pdf">PDF</div>
-        <span>PDF Documents</span>
-        <div class="format-features">
-          <span>Text layers</span><span>Tables</span><span>Metadata</span>
-        </div>
+    
+    <!-- Specs Matrix Table (Replaces Identical Card Grid) -->
+    <div class="specs-matrix">
+      <div class="matrix-header">
+        <div>FORMAT</div>
+        <div>PARSER LAYER</div>
+        <div>FEATURES EXTRACTED</div>
+        <div>ACCURACY</div>
+        <div>SANDBOXING</div>
       </div>
-      <div class="format-card" data-ext="DOCX">
-        <div class="format-icon docx">W</div>
-        <span>Word Documents</span>
-        <div class="format-features">
-          <span>Styles</span><span>Tables</span><span>Comments</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge pdf">PDF</span> PDF Document</div>
+        <div>Level 2a / 2b (OCR)</div>
+        <div>Text layouts, nested tables, metadata, OCR fallback</div>
+        <div>99.8%</div>
+        <div class="status-cell"><span class="status-dot success"></span> Process isolated</div>
       </div>
-      <div class="format-card" data-ext="TXT">
-        <div class="format-icon txt">TXT</div>
-        <span>Plain Text</span>
-        <div class="format-features">
-          <span>Encoding detect</span><span>Stats</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge docx">DOCX</span> Word Document</div>
+        <div>Level 2a (Mammoth AST)</div>
+        <div>Semantic styles, tables, list nesting</div>
+        <div>99.5%</div>
+        <div class="status-cell"><span class="status-dot success"></span> Process isolated</div>
       </div>
-      <div class="format-card" data-ext="MD">
-        <div class="format-icon md">MD</div>
-        <span>Markdown</span>
-        <div class="format-features">
-          <span>AST parse</span><span>Re-render</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge csv">CSV</span> Excel/CSV</div>
+        <div>Level 2a (Delimited)</div>
+        <div>Tabular arrays, numeric parsing, column mappings</div>
+        <div>100%</div>
+        <div class="status-cell"><span class="status-dot success"></span> In-memory</div>
       </div>
-      <div class="format-card" data-ext="CSV">
-        <div class="format-icon csv">CSV</div>
-        <span>Spreadsheets</span>
-        <div class="format-features">
-          <span>Auto-delimit</span><span>JSON out</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge json">JSON</span> JSON Data</div>
+        <div>Level 2a (AST Parser)</div>
+        <div>Validation, schema detection, clean formatting</div>
+        <div>100%</div>
+        <div class="status-cell"><span class="status-dot success"></span> In-memory</div>
       </div>
-      <div class="format-card" data-ext="JSON">
-        <div class="format-icon json">{}</div>
-        <span>JSON Data</span>
-        <div class="format-features">
-          <span>Validate</span><span>Schema detect</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge html">HTML</span> HTML Pages</div>
+        <div>Level 2a (DOM Stripper)</div>
+        <div>Boilerplate removal, article main-body extraction</div>
+        <div>98.7%</div>
+        <div class="status-cell"><span class="status-dot success"></span> In-memory</div>
       </div>
-      <div class="format-card" data-ext="HTML">
-        <div class="format-icon html">&lt;/&gt;</div>
-        <span>HTML Documents</span>
-        <div class="format-features">
-          <span>Clean extract</span><span>Boilerplate remove</span>
-        </div>
-      </div>
-      <div class="format-card" data-ext="XML">
-        <div class="format-icon xml">XML</div>
-        <span>XML / SVG</span>
-        <div class="format-features">
-          <span>Tree parse</span><span>Namespace</span>
-        </div>
+      <div class="matrix-row">
+        <div class="format-cell"><span class="format-badge xml">XML</span> XML Schemas</div>
+        <div>Level 2a (XML Parser)</div>
+        <div>Node hierarchies, namespaces, structure validation</div>
+        <div>99.1%</div>
+        <div class="status-cell"><span class="status-dot success"></span> In-memory</div>
       </div>
     </div>
   </section>
@@ -215,8 +234,8 @@
   <!-- Orchestration -->
   <section class="orch-section" id="orchestration">
     <div class="section-header">
-      <div class="section-tag">Architecture</div>
-      <h2 class="section-title">3-Level <span class="gradient-text">Orchestration Engine</span></h2>
+      <span class="section-tag">// 03 / orchestration_flow</span>
+      <h2 class="section-title">3-Level <span>Orchestration Engine</span></h2>
       <p class="section-sub">Every document takes the fastest, most accurate path automatically.</p>
     </div>
     <div class="orch-diagram" id="orchViz">
@@ -255,11 +274,11 @@
     </div>
   </section>
 
-  <!-- Parser Tool -->
+  <!-- Parser Tool Workspace -->
   <section class="parser-section" id="parser">
     <div class="section-header">
-      <div class="section-tag">Live Parser</div>
-      <h2 class="section-title">Drop your document.<br/><span class="gradient-text">Get perfect output.</span></h2>
+      <span class="section-tag">// 04 / parser_workspace</span>
+      <h2 class="section-title">Drop your document.<br/><span>Get perfect output.</span></h2>
     </div>
 
     <div class="parser-container">
@@ -267,7 +286,7 @@
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.csv,.json,.html,.htm,.xml,.docx,.xlsx" hidden />
         <div class="upload-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </div>
         <h3 class="upload-title">Drop files here</h3>
         <p class="upload-sub">or <button class="upload-browse" id="browseBtn">browse to upload</button></p>
@@ -281,7 +300,7 @@
       <!-- File Queue -->
       <div class="file-queue" id="fileQueue" style="display:none">
         <div class="queue-header">
-          <span class="queue-title">Files</span>
+          <span>Files In Queue</span>
           <button class="btn-add-more" id="addMoreBtn">+ Add more</button>
         </div>
         <div class="queue-list" id="queueList"></div>
@@ -324,38 +343,38 @@
         <div class="progress-steps" id="progressSteps"></div>
       </div>
 
-      <!-- Results -->
+      <!-- Results Workspace -->
       <div class="results-area" id="resultsArea" style="display:none">
         <div class="results-tabs" id="resultsTabs"></div>
         <div class="results-toolbar">
           <div class="result-stats" id="resultStats"></div>
           <div class="toolbar-actions">
             <button class="tool-btn active" data-action="preview" id="previewBtn" title="Preview rendered markdown">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               Preview
             </button>
             <button class="tool-btn active" data-action="wrap" id="wrapBtn" title="Toggle word wrap">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
               Wrap
             </button>
             <button class="tool-btn" data-action="search" id="searchToggleBtn" title="Search in output (Ctrl+F)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               Search
             </button>
             <button class="tool-btn" id="copyBtn" title="Copy output">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               Copy
             </button>
             <button class="tool-btn" id="downloadBtn" title="Download output">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download
             </button>
             <button class="tool-btn" data-action="history" id="historyToggleBtn" title="Session history">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
               History
             </button>
             <button class="tool-btn" id="newParseBtn" title="Parse new document">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New
             </button>
           </div>

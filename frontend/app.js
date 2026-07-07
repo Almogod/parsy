@@ -158,29 +158,45 @@
     form.append('clean', opts.clean);
 
     return new Promise(resolve => {
-      let outputBuf = '', metrics = {};
+      let outputBuf = '', metrics = {}, resolved = false;
+      const finish = (out, meta = {}) => {
+        if (resolved) return;
+        resolved = true;
+        results.push({ file, output: out, meta, tables: [] });
+        resolve();
+      };
+
       fetch(`${BACKEND_URL}/parse`, { method: 'POST', body: form })
         .then(resp => {
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          // Handle HTTP errors (e.g. 422 validation rejection) by reading error body
+          if (!resp.ok) {
+            return resp.json().catch(() => ({})).then(body => {
+              const msg = (body?.detail?.error) || (typeof body?.detail === 'string' ? body.detail : null) || `HTTP ${resp.status}`;
+              finish(`⚠ Backend rejected the file:\n\n${msg}\n\nIf this is a password-protected PDF, please remove the password first.`);
+            });
+          }
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
           let buf = '';
           function pump() {
             reader.read().then(({ done, value }) => {
-              if (done) { results.push({ file, output: outputBuf, meta: metrics, tables: [] }); resolve(); return; }
+              if (done) { finish(outputBuf, metrics); return; }
               buf += decoder.decode(value, { stream: true });
               const parts = buf.split('\n\n'); buf = parts.pop();
-              parts.forEach(part => handleSSEPart(part, metrics, out => { outputBuf += out; }));
-              pump();
-            }).catch(err => { results.push({ file, output: outputBuf || `Error: ${err}`, meta: {}, tables: [] }); resolve(); });
+              parts.forEach(part => handleSSEPart(part, metrics,
+                out => { outputBuf += out; },
+                errMsg => { finish(`⚠ Parse error:\n\n${errMsg}`); }
+              ));
+              if (!resolved) pump();
+            }).catch(err => finish(outputBuf || `⚠ Stream error: ${err}`));
           }
           pump();
         })
-        .catch(err => { results.push({ file, output: `Backend error: ${err}`, meta: {}, tables: [] }); resolve(); });
+        .catch(err => finish(`⚠ Cannot reach backend:\n\n${err}\n\nMake sure uvicorn is running.`));
     });
   }
 
-  function handleSSEPart(part, metrics, onChunk) {
+  function handleSSEPart(part, metrics, onChunk, onError) {
     const lines = part.split('\n');
     let eventName = '', dataStr = '';
     for (const l of lines) {
@@ -193,7 +209,6 @@
       updateProgress(d.pct || 0, d.message || d.step);
       if (eventName === 'route') { setOrchStep(d.route === 'vision_ocr' ? 'ocr' : 'fast'); updateOrchDetails(d); }
     } else if (eventName === 'ml_result') {
-      // Phase 2: ML annotation received
       addProgressStep(`🤖 ML: ${d.regions} regions · ${d.clusters} heading clusters · ${d.inferenceMs}ms`);
       updateProgress(d.pct || 78, `ML annotation done (${d.inferenceMs}ms)`);
     } else if (eventName === 'chunk') {
@@ -204,7 +219,10 @@
       Object.assign(metrics, d.metrics || {});
       updateProgress(100, 'Complete!');
     } else if (eventName === 'error') {
-      updateProgress(0, `Error: ${d.message}`);
+      // ← FIXED: resolve the promise so the UI doesn't hang
+      updateProgress(0, `⚠ ${d.message}`);
+      showToast(`⚠ ${d.message}`);
+      if (onError) onError(d.message);
     }
   }
 
@@ -380,15 +398,34 @@
 
   function applyOutputMode() {
     const container = $('outputPane');
-    if (previewMode && selectedFormat === 'markdown') {
-      container.innerHTML = `<div class="md-preview">${ParsyEngine.renderMarkdown(currentOutput)}</div>`;
-    } else if (selectedFormat === 'json') {
-      outputCode.innerHTML = ParsyEngine.highlightJSON(currentOutput.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
-      if (!container.contains(outputCode)) container.appendChild(outputCode);
-    } else {
-      outputCode.textContent = currentOutput;
-      if (!container.contains(outputCode)) container.appendChild(outputCode);
+    
+    // Ensure we have stable DOM nodes for both raw and preview modes
+    let previewEl = container.querySelector('.md-preview');
+    if (!previewEl) {
+      previewEl = document.createElement('div');
+      previewEl.className = 'md-preview';
+      container.insertBefore(previewEl, outputCode);
     }
+
+    if (previewMode && selectedFormat === 'markdown') {
+      try {
+        previewEl.innerHTML = ParsyEngine.renderMarkdown(currentOutput);
+      } catch (err) {
+        console.error("Markdown render failed (document too large?), falling back to raw", err);
+        previewEl.innerHTML = `<div class="error-pill">Preview too large — showing raw text</div><pre>${currentOutput}</pre>`;
+      }
+      previewEl.style.display = '';
+      outputCode.style.display = 'none';
+    } else {
+      previewEl.style.display = 'none';
+      outputCode.style.display = '';
+      if (selectedFormat === 'json') {
+        outputCode.innerHTML = ParsyEngine.highlightJSON(currentOutput.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+      } else {
+        outputCode.textContent = currentOutput;
+      }
+    }
+    
     container.classList.toggle('wrap', wordWrap);
     container.classList.toggle('line-nums', showLineNums);
   }

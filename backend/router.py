@@ -73,13 +73,16 @@ class DocumentRouter:
 
         page_count = len(doc)
         total_chars = 0
-        image_pages = 0
+        image_pages = 0  # pages with NO usable text at all
         rotated = 0
 
         for page in doc:
             text = page.get_text()
             total_chars += len(text)
-            if len(text.strip()) < 20 and len(page.get_images()) > 0:
+            images = page.get_images()
+            # A page is truly "image-only" if it has virtually no text (<50 chars)
+            # AND at least one image. A page with text + a logo is NOT an image page.
+            if len(text.strip()) < 50 and len(images) > 0:
                 image_pages += 1
             if page.rotation not in (0, 360):
                 rotated += 1
@@ -88,19 +91,23 @@ class DocumentRouter:
 
         text_density   = total_chars / max(len(data), 1)
         image_ratio    = image_pages / max(page_count, 1)
-        has_text_layer = text_density > self.TEXT_DENSITY_THRESHOLD
+        # A PDF is text-rich if density is above threshold OR it has substantial total chars
+        has_text_layer = text_density > self.TEXT_DENSITY_THRESHOLD or total_chars > 5000
         has_images     = image_pages > 0
 
-        if image_ratio > 0.5 or rotated > 0:
+        # Decision logic: text-layer quality takes priority over image presence
+        if has_text_layer:
+            route = Route.FAST_TEXT
+            reasons.append(f"Text layer present ({total_chars:,} chars)")
+            reasons.append(f"Text density: {text_density:.3f} chars/byte")
+            if image_pages > 0:
+                reasons.append(f"{image_pages} pages have images (ignored — text layer is dominant)")
+            confidence = 0.95
+        elif image_ratio > 0.5 or rotated > 0:
             route = Route.VISION_OCR
             reasons.append(f"{image_ratio:.0%} pages are scanned images")
             if rotated: reasons.append(f"{rotated} rotated page(s) detected")
             confidence = 0.9
-        elif has_text_layer:
-            route = Route.FAST_TEXT
-            reasons.append(f"Text layer present ({total_chars:,} chars)")
-            reasons.append(f"Text density: {text_density:.3f} chars/byte")
-            confidence = 0.95
         else:
             route = Route.VISION_OCR
             reasons.append("No reliable text layer — routing to OCR")

@@ -27,8 +27,7 @@ from fast_parser import FastStructuralParser
 from ocr_pipeline import VisionOCRPipeline
 from structured_parser import StructuredParser
 from normalizer import normalize
-from resource_guard import ResourceGuard, ResourceLimits
-from logging_config import configure_logging
+from utils import ResourceGuard, ResourceLimits, configure_logging, RedisJobStore
 from input_validator import validate_upload, ValidationError as InputValidationError
 
 # Bootstrap stdlib logging before structlog
@@ -53,7 +52,6 @@ MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_JOBS", 8))
 _semaphore: asyncio.Semaphore
 
 # ── Redis/In-memory job tracker (production) ──────────────────────────────
-from job_store import RedisJobStore
 _jobs = RedisJobStore(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
 # ── Resource guard ─────────────────────────────────────────────────────────

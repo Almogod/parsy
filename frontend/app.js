@@ -6,6 +6,7 @@
   // ── State ─────────────────────────────────────────────────────────────────
   let files = [], results = [], activeResult = 0;
   let selectedFormat = 'markdown', currentOutput = '';
+  // previewMode starts false — raw output is the default view
   let previewMode = false, wordWrap = true, showLineNums = false;
   let searchOpen = false, searchQuery = '';
   let history = JSON.parse(sessionStorage.getItem('parsyHistory') || '[]');

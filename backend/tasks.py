@@ -11,7 +11,7 @@ import os, json, time, uuid
 from celery import Celery
 from celery.utils.log import get_task_logger
 
-from resource_guard import ResourceGuard, ResourceLimits
+from utils import ResourceGuard, ResourceLimits
 from router import DocumentRouter, Route
 from fast_parser import FastStructuralParser
 from ocr_pipeline import VisionOCRPipeline

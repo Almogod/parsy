@@ -152,7 +152,7 @@ const ParsyEngine = (() => {
 
   // ── Syntax highlighter (JSON) ──────────────────────────────────────────────
   function highlightJSON(str) {
-    return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+    return str.replace(/(\"(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*\"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
       let cls = 'json-num';
       if (/^"/.test(match)) {
         cls = /:$/.test(match) ? 'json-key' : 'json-str';
@@ -220,100 +220,121 @@ const ParsyEngine = (() => {
     return html;
   }
 
-  // ── PDF.js integration ────────────────────────────────────────────────────
+  // ── Script loader ──────────────────────────────────────────────────────────
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = src; s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── PDF parser (PDF.js via CDN) ────────────────────────────────────────────
+  // NOTE: PDF.js 3.x registers itself as window.pdfjsLib (NOT window['pdfjs-dist/build/pdf'])
   async function parsePDF(file, opts, onStep) {
-    onStep('Loading PDF.js…');
-    // Load PDF.js if not already loaded
-    if (!window.pdfjsLib) {
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    onStep('Loading PDF engine…');
+    const PDFJS_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    await loadScript(PDFJS_CDN);
+
+    // PDF.js 3.x exposes itself as window.pdfjsLib
+    const pdfjsLib = window.pdfjsLib;
+    if (!pdfjsLib) {
+      throw new Error('PDF.js failed to load — pdfjsLib not found on window');
     }
-    onStep('Reading PDF…');
-    const arrayBuf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+    onStep('PDF engine ready');
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const numPages = pdf.numPages;
-    onStep(`PDF loaded (${numPages} pages)`);
+    onStep(`Loaded PDF — ${numPages} page(s)`);
 
-    const allText = [];
-    const tables = [];
-    let wordCount = 0;
-
+    // Group text items into lines by Y position for readable output
+    let fullText = '';
     for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      // Group items into lines by Y position
+      // Cluster by Y coordinate to preserve reading order
       const lineMap = new Map();
       content.items.forEach(item => {
         const y = Math.round(item.transform[5]);
         if (!lineMap.has(y)) lineMap.set(y, []);
-        lineMap.get(y).push({ text: item.str, x: item.transform[4], size: item.height });
+        lineMap.get(y).push({ text: item.str, x: item.transform[4] });
       });
-      // Sort lines top to bottom (PDF y-axis is inverted)
-      const sortedYs = [...lineMap.keys()].sort((a,b) => b - a);
-      const pageLines = sortedYs.map(y =>
-        lineMap.get(y).sort((a,b) => a.x - b.x).map(it => it.text).join(' ').trim()
-      ).filter(Boolean);
-      allText.push(...pageLines, '');
-      onStep(`Parsed page ${i}/${numPages}`);
+      // Sort top-to-bottom (PDF Y is from bottom, so descending)
+      const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+      const pageLines = sortedYs
+        .map(y => lineMap.get(y).sort((a, b) => a.x - b.x).map(it => it.text).join(' ').trim())
+        .filter(Boolean);
+      fullText += pageLines.join('\n') + '\n\n';
+      onStep(`Extracted page ${i}/${numPages}`);
     }
 
-    // Get metadata
-    const meta = await pdf.getMetadata().catch(() => ({}));
-    const docMeta = {
-      fileName: file.name,
-      fileSize: fmtSize(file.size),
-      pageCount: numPages,
-      title: meta.info?.Title || '',
-      author: meta.info?.Author || '',
-      createdAt: meta.info?.CreationDate || '',
-      pipeline: 'PDF.js (browser)',
-    };
+    if (opts.clean) { fullText = cleanWhitespace(fullText); onStep('Cleaned whitespace'); }
 
-    const rawText = allText.join('\n');
-    const words = countWords(rawText);
-    Object.assign(docMeta, {
-      wordCount: words,
-      charCount: rawText.length,
+    // Get PDF metadata
+    const pdfMeta = await pdf.getMetadata().catch(() => ({}));
+
+    const tables = opts.tables ? parseTables(fullText) : [];
+    const words  = countWords(fullText);
+    const meta = {
+      fileName:    file.name,
+      fileSize:    fmtSize(file.size),
+      fileType:    'PDF',
+      pageCount:   numPages,
+      wordCount:   words,
+      charCount:   fullText.length,
+      lineCount:   fullText.split('\n').length,
       readingTime: readingTime(words) + ' min',
-      language: detectLanguage(rawText),
-      parsedAt: new Date().toLocaleString(),
-    });
-
-    const parsedTables = opts.tables ? parseTables(rawText) : [];
-    docMeta.tableCount = parsedTables.length;
-
-    let output = buildOutput(rawText, docMeta, parsedTables, opts);
-    return { output, meta: docMeta, tables: parsedTables, raw: rawText };
+      tableCount:  tables.length,
+      language:    detectLanguage(fullText),
+      title:       pdfMeta.info?.Title || '',
+      author:      pdfMeta.info?.Author || '',
+      pipeline:    'Browser PDF.js (local)',
+      parsedAt:    new Date().toLocaleString(),
+    };
+    onStep('Extracted metadata');
+    const output = buildOutput(fullText, meta, tables, opts);
+    onStep('Generated output');
+    return { output, meta, tables, raw: fullText };
   }
 
-  // ── DOCX via mammoth.js ────────────────────────────────────────────────────
+  // ── DOCX parser (mammoth.js via CDN) ──────────────────────────────────────
   async function parseDOCX(file, opts, onStep) {
-    onStep('Loading mammoth.js…');
-    if (!window.mammoth) {
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
-    }
-    onStep('Converting DOCX…');
-    const arrayBuf = await file.arrayBuffer();
-    const result = await mammoth.convertToMarkdown({ arrayBuffer: arrayBuf });
-    onStep('DOCX converted');
-    const text = result.value;
-    const words = countWords(text);
-    const parsedTables = opts.tables ? parseTables(text) : [];
+    onStep('Loading DOCX engine…');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+    onStep('DOCX engine ready');
+
+    const arrayBuffer = await file.arrayBuffer();
+    // Use convertToMarkdown to preserve headings, bold, lists etc.
+    const result = await mammoth.convertToMarkdown({ arrayBuffer });
+    let text = result.value;
+    onStep('Converted DOCX to Markdown');
+
+    if (opts.clean) { text = cleanWhitespace(text); onStep('Cleaned whitespace'); }
+
+    const tables = opts.tables ? parseTables(text) : [];
+    const words  = countWords(text);
     const meta = {
-      fileName: file.name,
-      fileSize: fmtSize(file.size),
-      wordCount: words,
-      charCount: text.length,
-      lineCount: text.split('\n').length,
+      fileName:    file.name,
+      fileSize:    fmtSize(file.size),
+      fileType:    'DOCX',
+      wordCount:   words,
+      charCount:   text.length,
+      lineCount:   text.split('\n').length,
       readingTime: readingTime(words) + ' min',
-      tableCount: parsedTables.length,
-      language: detectLanguage(text),
-      pipeline: 'mammoth.js (browser)',
-      parsedAt: new Date().toLocaleString(),
+      tableCount:  tables.length,
+      language:    detectLanguage(text),
+      pipeline:    'Browser mammoth.js (local)',
+      parsedAt:    new Date().toLocaleString(),
     };
-    const output = buildOutput(text, meta, parsedTables, opts);
-    return { output, meta, tables: parsedTables, raw: text };
+    onStep('Extracted metadata');
+    const output = buildOutput(text, meta, tables, opts);
+    onStep('Generated output');
+    return { output, meta, tables, raw: text };
   }
 
   // ── Output builder ─────────────────────────────────────────────────────────
@@ -332,105 +353,12 @@ const ParsyEngine = (() => {
     return output;
   }
 
-  // ── Script loader ──────────────────────────────────────────────────────────
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-      const s = document.createElement('script');
-      s.src = src; s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  // ── PDF parser (PDF.js via CDN) ────────────────────────────────────────────
-  async function parsePDF(file, opts, onStep) {
-    onStep('Loading PDF engine…');
-    const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-    await loadScript(PDFJS_CDN);
-    const pdfjsLib = window['pdfjs-dist/build/pdf'];
-    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-    onStep('PDF engine ready');
-
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const numPages = pdf.numPages;
-    onStep(`Loaded PDF — ${numPages} page(s)`);
-
-    let fullText = '';
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
-      fullText += pageText + '\n\n';
-      onStep(`Extracted page ${i}/${numPages}`);
-    }
-
-    if (opts.clean) { fullText = cleanWhitespace(fullText); onStep('Cleaned whitespace'); }
-
-    const tables = opts.tables ? parseTables(fullText) : [];
-    const words = countWords(fullText);
-    const meta = {
-      fileName: file.name,
-      fileSize: fmtSize(file.size),
-      fileType: 'PDF',
-      pageCount: numPages,
-      wordCount: words,
-      charCount: fullText.length,
-      lineCount: fullText.split('\n').length,
-      readingTime: readingTime(words) + ' min',
-      tableCount: tables.length,
-      language: detectLanguage(fullText),
-      pipeline: 'Browser PDF.js (local)',
-      parsedAt: new Date().toLocaleString(),
-    };
-    onStep('Extracted metadata');
-    const output = buildOutput(fullText, meta, tables, opts);
-    onStep('Generated output');
-    return { output, meta, tables, raw: fullText };
-  }
-
-  // ── DOCX parser (mammoth.js via CDN) ──────────────────────────────────────
-  async function parseDOCX(file, opts, onStep) {
-    onStep('Loading DOCX engine…');
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
-    onStep('DOCX engine ready');
-
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    let text = result.value;
-    onStep('Extracted DOCX text');
-
-    if (opts.clean) { text = cleanWhitespace(text); onStep('Cleaned whitespace'); }
-
-    const tables = opts.tables ? parseTables(text) : [];
-    const words = countWords(text);
-    const meta = {
-      fileName: file.name,
-      fileSize: fmtSize(file.size),
-      fileType: 'DOCX',
-      wordCount: words,
-      charCount: text.length,
-      lineCount: text.split('\n').length,
-      readingTime: readingTime(words) + ' min',
-      tableCount: tables.length,
-      language: detectLanguage(text),
-      pipeline: 'Browser mammoth.js (local)',
-      parsedAt: new Date().toLocaleString(),
-    };
-    onStep('Extracted metadata');
-    const output = buildOutput(text, meta, tables, opts);
-    onStep('Generated output');
-    return { output, meta, tables, raw: text };
-  }
-
   // ── Main parse dispatcher ──────────────────────────────────────────────────
   async function parseFile(file, opts, onStep) {
     const ext = file.name.split('.').pop().toLowerCase();
     onStep('Routing document…');
 
-    if (ext === 'pdf') return parsePDF(file, opts, onStep);
+    if (ext === 'pdf')  return parsePDF(file, opts, onStep);
     if (ext === 'docx') return parseDOCX(file, opts, onStep);
 
     // All other types: read as text
@@ -438,12 +366,12 @@ const ParsyEngine = (() => {
     onStep('Read file');
 
     let text = raw;
-    if (ext === 'html' || ext === 'htm') { text = stripHTML(raw); onStep('Stripped HTML'); }
-    else if (ext === 'xml')  { text = stripXML(raw);      onStep('Parsed XML'); }
-    else if (ext === 'csv')  { text = csvToReadable(raw);  onStep('Parsed CSV'); }
-    else if (ext === 'json') { text = jsonToReadable(raw); onStep('Parsed JSON'); }
-    else if (ext === 'md')   { text = raw;                 onStep('Read Markdown'); }
-    else                     {                             onStep('Processed text'); }
+    if (ext === 'html' || ext === 'htm') { text = stripHTML(raw);      onStep('Stripped HTML'); }
+    else if (ext === 'xml')              { text = stripXML(raw);       onStep('Parsed XML'); }
+    else if (ext === 'csv')              { text = csvToReadable(raw);   onStep('Parsed CSV'); }
+    else if (ext === 'json')             { text = jsonToReadable(raw);  onStep('Parsed JSON'); }
+    else if (ext === 'md')               {                              onStep('Read Markdown'); }
+    else                                 {                              onStep('Processed text'); }
 
     if (opts.clean) { text = cleanWhitespace(text); onStep('Cleaned whitespace'); }
 
@@ -452,17 +380,17 @@ const ParsyEngine = (() => {
 
     const words = countWords(text);
     const meta = {
-      fileName: file.name,
-      fileSize: fmtSize(file.size),
-      fileType: file.type || ext.toUpperCase(),
-      wordCount: words,
-      charCount: text.length,
-      lineCount: text.split('\n').length,
+      fileName:    file.name,
+      fileSize:    fmtSize(file.size),
+      fileType:    file.type || ext.toUpperCase(),
+      wordCount:   words,
+      charCount:   text.length,
+      lineCount:   text.split('\n').length,
       readingTime: readingTime(words) + ' min',
-      tableCount: tables.length,
-      language: detectLanguage(text),
-      pipeline: 'Browser (local)',
-      parsedAt: new Date().toLocaleString(),
+      tableCount:  tables.length,
+      language:    detectLanguage(text),
+      pipeline:    'Browser (local)',
+      parsedAt:    new Date().toLocaleString(),
     };
     onStep('Extracted metadata');
 

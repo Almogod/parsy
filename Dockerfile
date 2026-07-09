@@ -12,17 +12,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --prefix=/install --no-cache-dir \
-    # CPU-only PyTorch first (much smaller than default)
-    torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --prefix=/install --no-cache-dir -r requirements.txt
+    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple \
+    -r requirements.txt
 
 
 # ── Stage 2: Runtime image ────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
 LABEL maintainer="Parsy <parsy@local>" \
-      version="3.0.0" \
-      description="Parsy — Superior Document Intelligence"
+    version="3.0.0" \
+    description="Parsy — Superior Document Intelligence"
 
 # System dependencies: Tesseract OCR, Poppler (pdf2image), fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -73,9 +73,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 # Default: run the API server (workers use different CMD in compose)
 CMD ["uvicorn", "main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "2", \
-     "--loop", "uvloop", \
-     "--http", "h11", \
-     "--timeout-keep-alive", "30"]
+    "--host", "0.0.0.0", \
+    "--port", "8000", \
+    "--workers", "2", \
+    "--loop", "uvloop", \
+    "--http", "h11", \
+    "--timeout-keep-alive", "30"]
